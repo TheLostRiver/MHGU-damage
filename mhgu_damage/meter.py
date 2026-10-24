@@ -28,6 +28,9 @@ DEFAULT_BREAKPOINT = 0xC02074
 MIN_DAMAGE = 1
 MAX_DAMAGE = 1_000_000
 
+#: hits separated by less than this are treated as one volley
+VOLLEY_GAP = 0.8
+
 
 @dataclass(slots=True)
 class Hit:
@@ -47,6 +50,9 @@ class Stats:
     dps_5s: float = 0.0
     last_hit: int = 0
     peak_dps: float = 0.0
+    volley_hits: int = 0
+    volley_damage: int = 0
+    volley_count: int = 0
     status: str = "starting"
     connected: bool = False
 
@@ -78,6 +84,12 @@ class DamageMeter:
         self._thread: threading.Thread | None = None
         self._base: int | None = None
         self._hits_seen = 0
+        self._volley_hits = 0
+        self._volley_damage = 0
+        self._last_volley_hits = 0
+        self._last_volley_damage = 0
+        self._volley_count = 0
+        self._last_hit_time = 0.0
 
     # ------------------------------------------------------------------ public
     def start(self) -> None:
@@ -101,15 +113,33 @@ class DamageMeter:
             self._peak_dps = 0.0
             self._hits_seen = 0
             self._last_index = None
+            self._volley_hits = 0
+            self._volley_damage = 0
+            self._last_volley_hits = 0
+            self._last_volley_damage = 0
+            self._volley_count = 0
+            self._last_hit_time = 0.0
 
     def add_hit(self, damage: int, index: int = 0, entry: int = 0, when: float | None = None) -> None:
         if not (MIN_DAMAGE <= damage <= MAX_DAMAGE):
             return
         t = time.monotonic() if when is None else when
         with self._lock:
+            # A pierce volley is a burst of hits; a gap longer than VOLLEY_GAP
+            # starts a new volley.  This is the metric that matters for the
+            # high-FPS pierce test: hits per shot, not just total damage.
+            if self._volley_hits and (t - self._last_hit_time) > VOLLEY_GAP:
+                self._last_volley_hits = self._volley_hits
+                self._last_volley_damage = self._volley_damage
+                self._volley_count += 1
+                self._volley_hits = 0
+                self._volley_damage = 0
             self._events.append(Hit(t, damage, index, entry))
             self._last_hit = damage
             self._hits_seen += 1
+            self._volley_hits += 1
+            self._volley_damage += damage
+            self._last_hit_time = t
 
     def snapshot(self) -> Stats:
         now = time.monotonic()
@@ -120,6 +150,17 @@ class DamageMeter:
             status = self._status
             connected = self._connected
             base = self._base
+            vh = self._volley_hits
+            vd = self._volley_damage
+            lvh = self._last_volley_hits
+            lvd = self._last_volley_damage
+            vc = self._volley_count
+            last_hit_time = self._last_hit_time
+
+        if vh and (now - last_hit_time) <= VOLLEY_GAP:
+            volley_hits, volley_damage, volley_count = vh, vd, vc + 1
+        else:
+            volley_hits, volley_damage, volley_count = lvh, lvd, vc
 
         total = sum(h.damage for h in events)
         elapsed = max(0.0, now - start)
@@ -145,6 +186,9 @@ class DamageMeter:
             dps_5s=dps_5s,
             last_hit=last_hit,
             peak_dps=peak,
+            volley_hits=volley_hits,
+            volley_damage=volley_damage,
+            volley_count=volley_count,
             status=status,
             connected=connected,
         )

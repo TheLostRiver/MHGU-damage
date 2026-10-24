@@ -135,12 +135,17 @@ class MeterWindow:
         footer = tk.Frame(outer, bg=BG)
         footer.pack(fill="x", pady=(6, 0))
         self.last_var = tk.StringVar(value="last  —")
+        self.volley_var = tk.StringVar(value="volley  —")
         self.peak_var = tk.StringVar(value="peak  —")
         self.session_var = tk.StringVar(value="session  —")
         tk.Label(
             footer, textvariable=self.last_var, bg=BG, fg=MUTED,
             font=("Consolas", 8),
         ).pack(side="left")
+        tk.Label(
+            footer, textvariable=self.volley_var, bg=BG, fg=ACCENT,
+            font=("Consolas", 8, "bold"),
+        ).pack(side="left", padx=(14, 0))
         tk.Label(
             footer, textvariable=self.session_var, bg=BG, fg=MUTED,
             font=("Consolas", 8),
@@ -273,6 +278,7 @@ class MeterWindow:
         self.time_var.set(f"{minutes:02d}:{seconds:02d}")
 
         self.last_var.set(f"last  {st.last_hit:>6,}")
+        self.volley_var.set(f"volley  {st.volley_hits} hit · {st.volley_damage:,}")
         self.peak_var.set(f"peak  {fmt_dps(st.peak_dps):>6}/s")
         self.session_var.set(f"session  {fmt_dps(st.dps_session):>6}/s")
 
