@@ -79,7 +79,7 @@ def run_probe(host: str, port: int, bp_offset: int, limit: int = 20) -> None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=6543, help="Eden GDB stub port (default 6543)")
+    ap.add_argument("--port", type=int, default=12345, help="Eden GDB stub port (default 12345)")
     ap.add_argument("--demo", action="store_true", help="use synthetic data (no emulator)")
     ap.add_argument("--no-gui", action="store_true", help="print stats instead of an overlay")
     ap.add_argument("--probe", action="store_true", help="log raw hits and exit")

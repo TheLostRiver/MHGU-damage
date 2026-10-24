@@ -19,7 +19,7 @@ from main import run_probe  # noqa: E402
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=6543)
+    ap.add_argument("--port", type=int, default=12345)
     ap.add_argument("--bp", type=lambda s: int(s, 0), default=0xC02074)
     ap.add_argument("--limit", type=int, default=20)
     args = ap.parse_args()

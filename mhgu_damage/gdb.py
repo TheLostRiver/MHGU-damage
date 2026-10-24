@@ -9,9 +9,18 @@ Python installation.
 """
 from __future__ import annotations
 
+import os
 import re
 import socket
+import sys
 import time
+
+DEBUG = os.environ.get("MHGU_METER_DEBUG") == "1"
+
+
+def _debug(*args):
+    if DEBUG:
+        print("[gdb]", *args, file=sys.stderr, flush=True)
 
 
 class RspError(RuntimeError):
@@ -19,18 +28,20 @@ class RspError(RuntimeError):
 
 
 class RspClient:
-    def __init__(self, host: str = "127.0.0.1", port: int = 6543, timeout: float = 10.0):
+    def __init__(self, host: str = "127.0.0.1", port: int = 12345, timeout: float = 10.0):
         self.host = host
         self.port = port
         self.timeout = timeout
         self.sock: socket.socket | None = None
         self._buf = b""
+        self._pending_stop: bytes | None = None
 
     # ------------------------------------------------------------------ socket
     def connect(self) -> "RspClient":
         self.sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
         self.sock.settimeout(self.timeout)
         self._buf = b""
+        self._pending_stop = None
         return self
 
     def close(self) -> None:
@@ -54,6 +65,7 @@ class RspClient:
             payload = payload.encode()
         checksum = sum(payload) & 0xFF
         packet = b"$" + payload + b"#" + f"{checksum:02x}".encode()
+        _debug("send", payload)
         self.sock.sendall(packet)
 
     def _recv_byte(self) -> bytes:
@@ -85,9 +97,11 @@ class RspClient:
         if expected is not None and (sum(data) & 0xFF) != expected:
             raise RspError("bad packet checksum")
         payload = bytes(data)
-        if payload.startswith(b"O"):
+        # 'O' packets are hex-encoded console output; 'OK' is a normal reply.
+        if payload.startswith(b"O") and payload != b"OK":
             # console output; skip and read the next packet
             return self._recv_packet()
+        _debug("recv", payload)
         return payload
 
     def cmd(self, payload: bytes | str, timeout: float | None = None) -> bytes:
@@ -97,14 +111,12 @@ class RspClient:
         if timeout is not None:
             self.sock.settimeout(timeout)
         try:
+            # Eden's debugger runs commands on its own thread; a tiny gap
+            # between packets avoids racing the previous reply.
+            time.sleep(0.05)
             self._send(payload)
-            # consume the ack (if any)
-            try:
-                ack = self.sock.recv(1)
-                if ack == b"-":
-                    self._send(payload)
-            except socket.timeout:
-                pass
+            # _recv_packet skips the '+' acknowledgement and any stray bytes,
+            # so there is no need to consume the ack separately.
             return self._recv_packet()
         finally:
             if timeout is not None:
@@ -168,6 +180,10 @@ class RspClient:
 
     # ---------------------------------------------------------------- execution
     def stop_reason(self) -> bytes:
+        if getattr(self, "_pending_stop", None):
+            p = self._pending_stop
+            self._pending_stop = None
+            return p
         return self.cmd("?", timeout=2.0)
 
     def continue_(self) -> None:
@@ -177,7 +193,10 @@ class RspClient:
         if self.sock is None:
             raise RspError("not connected")
         self.sock.sendall(b"\x03")
-        return self._recv_packet()
+        try:
+            return self._recv_packet()
+        except socket.timeout:
+            return b""
 
     def wait_stop(self, timeout: float = 1.0) -> bytes | None:
         """Wait for a T/S/W/X stop packet.  Returns None on timeout."""

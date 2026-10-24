@@ -44,9 +44,15 @@ str r8, [r4, #0xd74]      ; r8 = 本次伤害，r4 = 伤害数字环槽位
 Eden 主界面按 `Ctrl+,` 打开全局设置 → **调试** 标签页：
 
 - 勾选 **开启 GDB 调试**
-- 端口填 `6543`（默认）
+- 端口填 `12345`
 - 点 **OK**
 
+> Eden 默认端口是 6543，但 Windows 的 Hyper-V/WSL 经常把 `6507-6606` 整段排除，
+> 6543 会 bind 失败并在 Eden 日志里报 `bind ... 10013`。所以这里用 12345；
+> 如果 12345 也被占用，换一个没被排除的端口，并在运行时加 `--port`。
+>
+> 改完端口后要**重启 Eden**（或至少重启游戏），GDB stub 才会在新端口监听。
+>
 > 如果游戏在启动时停住不动，说明 GDB stub 已开启但还没有调试器连接。
 > 先运行本工具（它会自动连接并继续游戏），再启动游戏。
 
@@ -58,7 +64,7 @@ python main.py
 
 或者双击 `start.bat`。
 
-工具会等待 `127.0.0.1:6543`，连接后自动继续游戏，并显示悬浮窗。
+工具会等待 `127.0.0.1:12345`，连接后自动继续游戏，并显示悬浮窗。
 
 ### 3. 启动游戏
 
@@ -71,7 +77,7 @@ python main.py
 ### 命令行参数
 
 ```text
-python main.py --port 6543        # GDB stub 端口
+python main.py --port 12345        # GDB stub 端口
 python main.py --no-gui           # 控制台输出，不开窗
 python main.py --demo             # 合成数据，预览 UI（不需要模拟器）
 python main.py --probe            # 打印原始命中寄存器和环槽位，排查问题
@@ -105,7 +111,7 @@ python main.py --probe            # 打印原始命中寄存器和环槽位，�
 
 | 现象 | 处理 |
 |---|---|
-| `GDB stub not found` | Eden 设置 → 调试 → 开启 GDB 调试，端口 6543；重启 Eden |
+| `GDB stub not found` | Eden 设置 → 调试 → 开启 GDB 调试，端口 12345；重启 Eden |
 | 游戏启动后停住 | 先运行 `python main.py`，它会连接并继续游戏 |
 | 一直 0 伤害 | 确认游戏版本 1.4.0；运行 `python main.py --probe`，打一下怪，看是否打印 `r8=...` |
 | 伤害明显偏大/偏小 | 发一份 `--probe` 输出到 issue；可能需要按版本调整断点或过滤 owner |

@@ -13,6 +13,7 @@ The offset is relative to the main module base, so it survives ASLR.
 """
 from __future__ import annotations
 
+import re
 import threading
 import time
 from collections import deque
@@ -56,7 +57,7 @@ class DamageMeter:
     def __init__(
         self,
         host: str = "127.0.0.1",
-        port: int = 6543,
+        port: int = 12345,
         breakpoint_offset: int = DEFAULT_BREAKPOINT,
         connect_timeout: float = 60.0,
     ):
@@ -197,23 +198,28 @@ class DamageMeter:
 
     def _run_session(self, rsp: RspClient) -> None:
         try:
+            # Give Eden's debugger a moment to settle after the TCP connect.
+            # This mirrors a normal GDB attach: ask for the current stop, set
+            # the breakpoint while stopped, then continue.
+            time.sleep(1.0)
             base = rsp.main_base()
             self._base = base
             bp = base + self.breakpoint_offset
             self._set_status(f"connected, main={base:#x}", True)
 
-            # Make sure the guest is stopped before inserting the breakpoint.
             reason = b""
             try:
                 reason = rsp.stop_reason()
-            except RspError:
-                pass
+            except Exception:
+                reason = b""
             if reason[:1] not in (b"T", b"S", b"W", b"X"):
+                self._set_status("stopping guest...", True)
                 try:
                     rsp.interrupt()
                 except Exception:
                     pass
 
+            self._set_status("setting breakpoint...", True)
             rsp.set_breakpoint(bp)
             self._set_status("capturing", True)
             self._last_index = None
@@ -224,6 +230,11 @@ class DamageMeter:
                 if stop is None:
                     continue
                 try:
+                    m = re.search(rb"0f:([0-9a-fA-F]{8})", stop)
+                    pc = int.from_bytes(bytes.fromhex(m.group(1).decode()), "little") if m else 0
+                    # Only consume stops that are our damage-number store.
+                    if pc not in (bp, bp + 4):
+                        continue
                     regs = rsp.registers()
                     damage = regs[8] & 0xFFFFFFFF
                     index = regs[7] & 0xFFFFFFFF
